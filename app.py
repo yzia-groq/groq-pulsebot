@@ -2,6 +2,7 @@ import os
 import asyncio
 import requests
 import json
+import random
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 from slack_sdk import WebClient
@@ -151,37 +152,56 @@ def fetch_newsapi_articles(category="technology", limit=10):
         return []
 
 def categorize_article(title):
-    """Categorize article based on title keywords"""
+    """Enhanced categorization with better keyword matching"""
     title_lower = title.lower()
     
-    # Design keywords (prioritize since you're a designer)
+    # Design keywords (most specific first)
     design_keywords = [
-        'design', 'ui', 'ux', 'user experience', 'user interface', 'figma', 'sketch', 
-        'adobe', 'prototype', 'wireframe', 'mockup', 'design system', 'typography', 
-        'color', 'branding', 'visual', 'interaction design', 'usability', 'accessibility',
-        'product design', 'web design', 'mobile design', 'design thinking', 'design ops',
-        'design tools', 'framer', 'principle', 'invision', 'miro', 'figjam'
+        'design system', 'ui design', 'ux design', 'user experience', 'user interface', 
+        'figma', 'sketch', 'adobe xd', 'prototype', 'wireframe', 'mockup', 'typography', 
+        'color theory', 'branding', 'visual design', 'interaction design', 'usability', 
+        'accessibility', 'design thinking', 'design ops', 'design tools', 'framer',
+        'principle', 'invision', 'miro', 'figjam', 'product design', 'web design', 
+        'mobile design', 'graphic design'
     ]
+    
     if any(keyword in title_lower for keyword in design_keywords):
         return 'design'
     
     # AI/ML keywords
-    ai_keywords = ['ai', 'artificial intelligence', 'machine learning', 'ml', 'gpt', 'llm', 'neural', 'openai', 'anthropic', 'groq']
+    ai_keywords = [
+        'artificial intelligence', 'machine learning', 'deep learning', 'neural network',
+        'chatgpt', 'gpt', 'llm', 'openai', 'anthropic', 'groq', 'transformer',
+        'ai model', 'ml model', 'data science', 'algorithm'
+    ]
     if any(keyword in title_lower for keyword in ai_keywords):
         return 'ai_ml'
     
     # Engineering keywords
-    engineering_keywords = ['javascript', 'python', 'react', 'node', 'programming', 'code', 'developer', 'github', 'framework', 'api', 'backend', 'frontend']
+    engineering_keywords = [
+        'javascript', 'typescript', 'python', 'react', 'vue', 'angular', 'node.js',
+        'programming', 'coding', 'developer', 'software development', 'api',
+        'framework', 'library', 'github', 'git', 'database', 'backend', 'frontend',
+        'full stack', 'devops', 'cloud computing', 'aws', 'docker', 'kubernetes'
+    ]
     if any(keyword in title_lower for keyword in engineering_keywords):
         return 'engineering'
     
     # Product keywords
-    product_keywords = ['product management', 'product manager', 'pm', 'roadmap', 'feature', 'user research', 'analytics', 'metrics']
+    product_keywords = [
+        'product management', 'product manager', 'product strategy', 'roadmap',
+        'feature launch', 'user research', 'analytics', 'metrics', 'a/b testing',
+        'product development', 'agile', 'scrum'
+    ]
     if any(keyword in title_lower for keyword in product_keywords):
         return 'product'
     
     # Business keywords
-    business_keywords = ['startup', 'funding', 'vc', 'investment', 'ipo', 'acquisition', 'revenue', 'saas', 'business model']
+    business_keywords = [
+        'startup', 'funding', 'venture capital', 'vc', 'investment', 'ipo',
+        'acquisition', 'revenue', 'business model', 'saas', 'enterprise',
+        'market analysis', 'growth hacking'
+    ]
     if any(keyword in title_lower for keyword in business_keywords):
         return 'business'
     
@@ -213,63 +233,299 @@ def map_subreddit_to_category(subreddit):
     return mapping.get(subreddit, 'general')
 
 def fetch_real_news(user_profile, limit=15):
-    """Fetch real news from multiple sources based on user profile"""
-    print(f"Fetching real news for profile: {user_profile.get('primary_role', 'general')}")
+    """Fetch real news from multiple sources based on user profile with better filtering"""
+    print(f"Fetching real news for profile: {user_profile}")
     
     all_articles = []
-    
-    # Fetch from HackerNews (always good tech content)
-    print("Fetching from HackerNews...")
-    hn_articles = fetch_hackernews_stories(limit=10)
-    all_articles.extend(hn_articles)
-    
-    # Fetch from Reddit
-    print("Fetching from Reddit...")
-    reddit_articles = fetch_reddit_tech_posts(limit=10)
-    all_articles.extend(reddit_articles)
-    
-    # Fetch from News API if available
-    if NEWS_API_KEY:
-        print("Fetching from News API...")
-        news_articles = fetch_newsapi_articles(limit=5)
-        all_articles.extend(news_articles)
-    
-    # Filter and sort articles based on user profile
     primary_role = user_profile.get("primary_role", "engineering")
     interests = user_profile.get("secondary_interests", [])
     
-    # Score articles based on relevance
+    print(f"User role: {primary_role}, Interests: {interests}")
+    
+    # Fetch from HackerNews with role-based filtering
+    print("Fetching from HackerNews...")
+    hn_articles = fetch_hackernews_stories_filtered(primary_role, interests, limit=15)
+    all_articles.extend(hn_articles)
+    
+    # Fetch from Reddit with targeted subreddits
+    print("Fetching from Reddit...")
+    reddit_articles = fetch_reddit_filtered(primary_role, interests, limit=15)
+    all_articles.extend(reddit_articles)
+    
+    # Fetch from News API with relevant keywords
+    if NEWS_API_KEY:
+        print("Fetching from News API...")
+        news_articles = fetch_newsapi_filtered(primary_role, interests, limit=10)
+        all_articles.extend(news_articles)
+    
+    # Add variety by shuffling
+    random.shuffle(all_articles)
+    
+    # Enhanced scoring based on user profile
     scored_articles = []
     for article in all_articles:
-        score = 0
-        title_lower = article['title'].lower()
-        
-        # Score based on primary role
-        if article['category'] == primary_role:
-            score += 3
-        
-        # Score based on interests
-        for interest in interests:
-            if interest.lower() in title_lower:
-                score += 2
-        
-        # Boost recent articles
-        try:
-            article_date = datetime.strptime(article['published'], '%Y-%m-%d')
-            days_old = (datetime.now() - article_date).days
-            if days_old <= 1:
-                score += 2
-            elif days_old <= 7:
-                score += 1
-        except:
-            pass
-        
+        score = calculate_article_relevance_score(article, user_profile)
         scored_articles.append((score, article))
     
     # Sort by score and return top articles
     scored_articles.sort(key=lambda x: x[0], reverse=True)
     
-    return [article for score, article in scored_articles[:limit]]
+    # Remove duplicates by title similarity
+    unique_articles = remove_duplicate_articles([article for score, article in scored_articles])
+    
+    print(f"Final articles: {len(unique_articles)} after filtering and deduplication")
+    for i, article in enumerate(unique_articles[:5]):
+        print(f"  {i+1}. [{article['category']}] {article['title'][:50]}...")
+    
+    return unique_articles[:limit]
+
+def fetch_hackernews_stories_filtered(role, interests, limit=15):
+    """Fetch HackerNews stories with better filtering"""
+    try:
+        # Get more stories to have better selection
+        top_stories_url = "https://hacker-news.firebaseio.com/v0/topstories.json"
+        response = requests.get(top_stories_url, timeout=10)
+        story_ids = response.json()
+        
+        # Randomize the starting point to get variety
+        start_idx = random.randint(0, min(50, len(story_ids) - limit * 2))
+        story_ids = story_ids[start_idx:start_idx + limit * 2]  # Get more to filter from
+        
+        articles = []
+        for story_id in story_ids:
+            try:
+                story_url = f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json"
+                story_response = requests.get(story_url, timeout=5)
+                story_data = story_response.json()
+                
+                if story_data and story_data.get('type') == 'story' and story_data.get('url'):
+                    title = story_data.get('title', 'No title')
+                    category = categorize_article(title)
+                    
+                    # Filter based on role and interests
+                    if is_article_relevant(title, role, interests):
+                        article = {
+                            "title": title,
+                            "link": story_data.get('url', ''),
+                            "summary": f"HackerNews discussion with {story_data.get('score', 0)} points and {story_data.get('descendants', 0)} comments",
+                            "published": datetime.fromtimestamp(story_data.get('time', 0)).strftime('%Y-%m-%d'),
+                            "source": "Hacker News",
+                            "category": category,
+                            "score": story_data.get('score', 0)
+                        }
+                        articles.append(article)
+                        
+                        if len(articles) >= limit:
+                            break
+                            
+            except Exception as e:
+                print(f"Error fetching story {story_id}: {e}")
+                continue
+                
+        return articles
+    except Exception as e:
+        print(f"Error fetching HackerNews: {e}")
+        return []
+
+def fetch_reddit_filtered(role, interests, limit=15):
+    """Fetch from Reddit with role-specific subreddits"""
+    try:
+        # Choose subreddits based on role
+        role_subreddits = {
+            'design': ['design', 'userexperience', 'web_design', 'graphic_design', 'UI_Design', 'productdesign'],
+            'engineering': ['programming', 'webdev', 'javascript', 'python', 'reactjs', 'MachineLearning'],
+            'product': ['product_management', 'startups', 'entrepreneur', 'productivity'],
+            'business': ['startups', 'entrepreneur', 'business', 'investing'],
+            'ai_ml': ['MachineLearning', 'artificial', 'deeplearning', 'ChatGPT'],
+            'general': ['technology', 'programming', 'startups']
+        }
+        
+        subreddits = role_subreddits.get(role, role_subreddits['general'])
+        articles = []
+        
+        for subreddit in subreddits[:4]:  # Limit to 4 subreddits
+            try:
+                # Add randomization to get different posts
+                sort_types = ['hot', 'top', 'new']
+                sort_type = random.choice(sort_types)
+                
+                url = f"https://www.reddit.com/r/{subreddit}/{sort_type}.json?limit=8"
+                headers = {'User-Agent': 'PulseBot/1.0'}
+                response = requests.get(url, headers=headers, timeout=10)
+                data = response.json()
+                
+                for post in data['data']['children']:
+                    post_data = post['data']
+                    title = post_data.get('title', 'No title')
+                    
+                    # Filter by relevance
+                    if (not post_data.get('is_self') and 
+                        post_data.get('url') and 
+                        is_article_relevant(title, role, interests) and
+                        post_data.get('score', 0) > 10):  # Minimum score threshold
+                        
+                        article = {
+                            "title": title,
+                            "link": post_data.get('url', ''),
+                            "summary": post_data.get('selftext', '')[:200] + "..." if post_data.get('selftext') else f"Reddit discussion with {post_data.get('score', 0)} upvotes",
+                            "published": datetime.fromtimestamp(post_data.get('created_utc', 0)).strftime('%Y-%m-%d'),
+                            "source": f"r/{subreddit}",
+                            "category": categorize_article(title),
+                            "score": post_data.get('score', 0)
+                        }
+                        articles.append(article)
+                        
+                        if len(articles) >= limit:
+                            break
+                            
+            except Exception as e:
+                print(f"Error fetching from r/{subreddit}: {e}")
+                continue
+                
+        return articles[:limit]
+    except Exception as e:
+        print(f"Error fetching Reddit: {e}")
+        return []
+
+def fetch_newsapi_filtered(role, interests, limit=10):
+    """Fetch from News API with role-specific keywords"""
+    if not NEWS_API_KEY:
+        return []
+        
+    try:
+        # Build search query based on role and interests
+        role_keywords = {
+            'design': 'design OR "user experience" OR "UI/UX" OR figma OR adobe',
+            'engineering': 'programming OR "software development" OR javascript OR python OR react',
+            'product': '"product management" OR startup OR "product launch" OR SaaS',
+            'business': 'startup OR funding OR "venture capital" OR IPO OR acquisition',
+            'ai_ml': '"artificial intelligence" OR "machine learning" OR AI OR ML OR ChatGPT',
+            'general': 'technology OR tech OR startup'
+        }
+        
+        query = role_keywords.get(role, role_keywords['general'])
+        
+        # Add interests to query
+        if interests:
+            interest_terms = ' OR '.join([f'"{interest}"' for interest in interests])
+            query = f"({query}) OR ({interest_terms})"
+        
+        url = "https://newsapi.org/v2/everything"
+        params = {
+            'apiKey': NEWS_API_KEY,
+            'q': query,
+            'language': 'en',
+            'sortBy': 'publishedAt',
+            'pageSize': limit,
+            'from': (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')  # Last 3 days
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        
+        articles = []
+        for article_data in data.get('articles', []):
+            title = article_data.get('title', 'No title')
+            if is_article_relevant(title, role, interests):
+                article = {
+                    "title": title,
+                    "link": article_data.get('url', ''),
+                    "summary": article_data.get('description', 'No description available'),
+                    "published": article_data.get('publishedAt', '').split('T')[0],
+                    "source": article_data.get('source', {}).get('name', 'Unknown'),
+                    "category": categorize_article(title)
+                }
+                articles.append(article)
+                
+        return articles
+    except Exception as e:
+        print(f"Error fetching News API: {e}")
+        return []
+
+def is_article_relevant(title, role, interests):
+    """Check if article is relevant to user's role and interests"""
+    title_lower = title.lower()
+    
+    # Role-specific keywords
+    role_keywords = {
+        'design': ['design', 'ui', 'ux', 'user experience', 'figma', 'sketch', 'adobe', 'prototype', 'wireframe', 'typography', 'visual', 'interface', 'usability', 'accessibility'],
+        'engineering': ['programming', 'code', 'developer', 'javascript', 'python', 'react', 'api', 'framework', 'github', 'software', 'technical'],
+        'product': ['product', 'management', 'roadmap', 'feature', 'user research', 'analytics', 'metrics', 'strategy'],
+        'business': ['business', 'startup', 'funding', 'revenue', 'growth', 'market', 'strategy', 'investment'],
+        'ai_ml': ['ai', 'artificial intelligence', 'machine learning', 'ml', 'neural', 'algorithm', 'data science'],
+        'general': ['technology', 'tech', 'innovation', 'digital']
+    }
+    
+    # Check role relevance
+    role_terms = role_keywords.get(role, role_keywords['general'])
+    role_match = any(term in title_lower for term in role_terms)
+    
+    # Check interest relevance
+    interest_match = any(interest.lower() in title_lower for interest in interests)
+    
+    # General tech relevance
+    general_tech = any(term in title_lower for term in ['tech', 'digital', 'software', 'app', 'platform', 'innovation'])
+    
+    return role_match or interest_match or general_tech
+
+def calculate_article_relevance_score(article, user_profile):
+    """Calculate relevance score for article based on user profile"""
+    score = 0
+    title_lower = article['title'].lower()
+    summary_lower = article.get('summary', '').lower()
+    
+    primary_role = user_profile.get("primary_role", "engineering")
+    interests = user_profile.get("secondary_interests", [])
+    
+    # Score based on category match
+    if article.get('category') == primary_role:
+        score += 10
+    
+    # Score based on interests
+    for interest in interests:
+        if interest.lower() in title_lower or interest.lower() in summary_lower:
+            score += 5
+    
+    # Boost for recent articles
+    try:
+        article_date = datetime.strptime(article['published'], '%Y-%m-%d')
+        days_old = (datetime.now() - article_date).days
+        if days_old <= 1:
+            score += 8
+        elif days_old <= 3:
+            score += 4
+        elif days_old <= 7:
+            score += 2
+    except:
+        pass
+    
+    # Boost for popular articles (if score available)
+    if 'score' in article and article['score']:
+        if article['score'] > 100:
+            score += 3
+        elif article['score'] > 50:
+            score += 2
+    
+    # Special boost for design-related content (since you're a designer)
+    design_terms = ['design', 'ui', 'ux', 'figma', 'user experience', 'prototype', 'visual']
+    if primary_role == 'design' and any(term in title_lower for term in design_terms):
+        score += 15
+    
+    return score
+
+def remove_duplicate_articles(articles):
+    """Remove duplicate articles based on title similarity"""
+    unique_articles = []
+    seen_titles = set()
+    
+    for article in articles:
+        title_clean = article['title'].lower().strip()
+        # Simple deduplication by title
+        if title_clean not in seen_titles:
+            seen_titles.add(title_clean)
+            unique_articles.append(article)
+    
+    return unique_articles
 
 def create_user_profile(user_description):
     """Use Groq to analyze user description and create structured profile"""
@@ -378,20 +634,137 @@ def create_user_profile(user_description):
         return None
 
 def fetch_personalized_news(user_profile, limit=15):
-    """Fetch real news tailored to user's profile"""
-    print(f"=== FETCHING REAL NEWS ===")
+    """Fetch real news tailored to user's profile with better filtering"""
+    print(f"=== FETCHING PERSONALIZED NEWS ===")
     print(f"Profile: {user_profile}")
     
+    primary_role = user_profile.get("primary_role", "engineering")
+    interests = user_profile.get("secondary_interests", [])
+    
+    print(f"Targeting role: {primary_role}")
+    print(f"Targeting interests: {interests}")
+    
     # Try to fetch real news first
-    real_articles = fetch_real_news(user_profile, limit)
+    real_articles = fetch_real_news(user_profile, limit * 2)  # Get more to filter from
     
     if real_articles:
-        print(f"Successfully fetched {len(real_articles)} real articles")
-        return real_articles
+        print(f"Successfully fetched {len(real_articles)} filtered articles")
+        
+        # Show what we found
+        print("Top articles found:")
+        for i, article in enumerate(real_articles[:5]):
+            print(f"  {i+1}. [{article['category']}] {article['title'][:60]}...")
+        
+        return real_articles[:limit]
     else:
-        print("Failed to fetch real news, falling back to mock articles")
-        # Fallback to mock articles if real news fails
-        return fetch_mock_news_fallback(user_profile, limit)
+        print("No real articles found, using fallback")
+        # Enhanced fallback based on role
+        return get_role_specific_fallback(user_profile, limit)
+
+def get_role_specific_fallback(user_profile, limit=15):
+    """Generate role-specific fallback articles"""
+    role = user_profile.get("primary_role", "engineering")
+    
+    design_articles = [
+        {
+            "title": "Figma's New Auto Layout Features Transform Responsive Design",
+            "link": "https://figma.com/blog/auto-layout-4",
+            "summary": "Figma introduces advanced auto layout capabilities that make responsive design faster and more intuitive for product teams...",
+            "published": datetime.now().strftime('%Y-%m-%d'),
+            "source": "Figma Blog",
+            "category": "design"
+        },
+        {
+            "title": "Apple's Design System Evolution: From Skeuomorphism to Spatial Computing",
+            "link": "https://developer.apple.com/design",
+            "summary": "A deep dive into how Apple's design philosophy has evolved and what it means for designers working on next-generation interfaces...",
+            "published": datetime.now().strftime('%Y-%m-%d'),
+            "source": "Apple Developer",
+            "category": "design"
+        },
+        {
+            "title": "The Rise of AI-Powered Design Tools: Threat or Opportunity?",
+            "link": "https://uxdesign.cc/ai-design-tools",
+            "summary": "Exploring how AI is changing the design landscape and what designers need to know to stay relevant in an AI-first world...",
+            "published": datetime.now().strftime('%Y-%m-%d'),
+            "source": "UX Design",
+            "category": "design"
+        },
+        {
+            "title": "Design Systems at Scale: Lessons from Shopify's Polaris",
+            "link": "https://polaris.shopify.com",
+            "summary": "How Shopify built and maintains one of the most comprehensive design systems, serving thousands of developers and designers...",
+            "published": datetime.now().strftime('%Y-%m-%d'),
+            "source": "Shopify",
+            "category": "design"
+        },
+        {
+            "title": "User Research in the Age of AI: New Methods for Understanding Behavior",
+            "link": "https://nngroup.com/articles/ai-user-research",
+            "summary": "Nielsen Norman Group explores how AI is transforming user research methodologies and what researchers need to adapt...",
+            "published": datetime.now().strftime('%Y-%m-%d'),
+            "source": "Nielsen Norman Group",
+            "category": "design"
+        }
+    ]
+    
+    ai_articles = [
+        {
+            "title": "Groq's Latest Chip Architecture Achieves 10x Inference Speed",
+            "link": "https://groq.com/news/chip-performance",
+            "summary": "Groq's new tensor streaming processor delivers unprecedented performance for LLM inference, changing the economics of AI deployment...",
+            "published": datetime.now().strftime('%Y-%m-%d'),
+            "source": "Groq",
+            "category": "ai_ml"
+        },
+        {
+            "title": "The Science Behind Faster AI: Hardware-Software Co-Design",
+            "link": "https://groq.com/technology",
+            "summary": "Understanding how purpose-built hardware can dramatically improve AI performance compared to traditional GPU architectures...",
+            "published": datetime.now().strftime('%Y-%m-%d'),
+            "source": "Groq Technology",
+            "category": "ai_ml"
+        }
+    ]
+    
+    if role == "design":
+        # Mix design articles with some AI (since you work at Groq)
+        articles = design_articles + ai_articles[:2]
+    else:
+        # Fallback to mixed content
+        articles = design_articles[:3] + ai_articles
+    
+    # Shuffle for variety
+    random.shuffle(articles)
+    return articles[:limit]
+
+def debug_news_fetching(user_profile):
+    """Debug function to see what news is being fetched"""
+    print("\n=== DEBUG NEWS FETCHING ===")
+    
+    # Test HackerNews
+    print("Testing HackerNews...")
+    hn_articles = fetch_hackernews_stories_filtered(
+        user_profile.get("primary_role", "design"), 
+        user_profile.get("secondary_interests", []), 
+        limit=5
+    )
+    print(f"HackerNews found: {len(hn_articles)} articles")
+    for article in hn_articles:
+        print(f"  - [{article['category']}] {article['title'][:50]}...")
+    
+    # Test Reddit
+    print("\nTesting Reddit...")
+    reddit_articles = fetch_reddit_filtered(
+        user_profile.get("primary_role", "design"), 
+        user_profile.get("secondary_interests", []), 
+        limit=5
+    )
+    print(f"Reddit found: {len(reddit_articles)} articles")
+    for article in reddit_articles:
+        print(f"  - [{article['category']}] {article['title'][:50]}...")
+    
+    print("=== END DEBUG ===\n")
 
 def fetch_mock_news_fallback(user_profile, limit=15):
     """Fallback mock news if real sources fail"""
@@ -438,7 +811,7 @@ def fetch_mock_news_fallback(user_profile, limit=15):
     return relevant_articles[:limit]
 
 def personalized_summarize_with_groq(articles, user_profile):
-    """Create a highly personalized digest based on user profile"""
+    """Create a highly personalized digest based on user profile - optimized for Slack"""
     try:
         profile_summary = user_profile.get("summary", "tech professional")
         role = user_profile.get("primary_role", "engineering")
@@ -448,7 +821,7 @@ def personalized_summarize_with_groq(articles, user_profile):
         # Prepare content for summarization
         content = "\n\n".join([
             f"Title: {article['title']}\nSummary: {article['summary']}\nSource: {article['source']}\nCategory: {article['category']}"
-            for article in articles
+            for article in articles[:8]  # Limit to top 8 articles
         ])
         
         prompt = f"""
@@ -461,37 +834,47 @@ def personalized_summarize_with_groq(articles, user_profile):
         {content}
         
         Instructions:
-        1. Select 5-7 most relevant articles for this specific user
-        2. Prioritize based on their role, interests, and experience level
-        3. Write engaging summaries (2-3 sentences each)
-        4. Explain WHY each article matters to them personally
-        5. Use a conversational tone like a knowledgeable colleague
-        6. Add relevant emojis and format nicely
-        7. Start with a personalized greeting mentioning their role/interests
+        1. Select 4-5 most relevant articles for this specific user
+        2. Write engaging summaries (1-2 sentences each)
+        3. Explain WHY each article matters to them personally
+        4. Use a conversational tone like a knowledgeable colleague
+        5. Start with a brief personalized greeting mentioning their role
+        6. Keep the ENTIRE response under 1500 characters
+        7. Use emojis sparingly (max 3-4 total)
+        8. Format as plain text, no markdown
         
-        Make it feel like it was curated specifically for them!
+        CRITICAL: Keep response under 1500 characters total. Be concise but engaging.
         """
         
         response = groq_client.chat.completions.create(
             model="llama3-8b-8192",
             messages=[
-                {"role": "system", "content": "You are a personalized news curator who understands each user's unique professional needs and interests."},
+                {"role": "system", "content": "You are a personalized news curator who creates concise, engaging digests under 1500 characters."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=2000
+            max_tokens=800  # Reduced token limit
         )
         
-        return response.choices[0].message.content.strip()
+        digest = response.choices[0].message.content.strip()
+        
+        # Ensure it's not too long for Slack
+        if len(digest) > 1500:
+            digest = digest[:1450] + "..."
+        
+        return digest
     
     except Exception as e:
         print(f"Error with personalized summarization: {e}")
         return None
 
+
+# Replace your existing handle_conversation function with this enhanced version:
+
 def handle_conversation(user_id, user_message, channel_id):
-    """Handle conversational interactions about news and articles"""
+    """Handle conversational interactions with enhanced AI capabilities"""
     try:
-        user_profile = user_profiles[user_id]
+        user_profile = user_profiles.get(user_id, {})
         
         # Get recent articles for context
         user_recent_articles = recent_articles.get(user_id, [])
@@ -499,44 +882,65 @@ def handle_conversation(user_id, user_message, channel_id):
         if user_recent_articles:
             articles_context = "\n\nRecent articles from their digest:\n" + "\n".join([
                 f"- {article['title']}: {article['summary'][:100]}..."
-                for article in user_recent_articles[:3]
+                for article in user_recent_articles[:5]
             ])
         
-        # Use Groq to generate contextual responses
+        # Enhanced conversation prompt for design-focused responses
         conversation_prompt = f"""
-        You are PulseBot, a helpful and knowledgeable news assistant. The user has this profile:
+        You are PulseBot, an intelligent and friendly AI assistant specialized in design, technology, and industry insights. You're having a conversation with a user who has this profile:
+        
         Role: {user_profile.get('primary_role', 'professional')}
         Industry: {user_profile.get('industry', 'technology')}
         Experience: {user_profile.get('experience_level', 'mid')}
         Interests: {', '.join(user_profile.get('secondary_interests', []))}
+        Company: {user_profile.get('company_stage', 'Unknown')}
         {articles_context}
         
         User message: "{user_message}"
         
-        Respond helpfully as a knowledgeable colleague. You can discuss:
-        - News and industry trends relevant to their role
-        - Article explanations and deeper insights
-        - Career advice and professional development
-        - Technology predictions and analysis
-        - Startup and business insights
+        Respond as a knowledgeable colleague who understands design, technology, and industry trends. You can:
         
-        Be conversational, insightful, and concise (2-4 sentences max).
-        Reference specific articles from their recent digest when relevant.
-        If they want a new digest, suggest using /digest.
-        If they're asking about updating preferences, mention /preferences.
+        🎨 **Design & UX:**
+        - Discuss design trends, tools (Figma, Sketch, Adobe), and methodologies
+        - Analyze UX patterns, accessibility, and user research
+        - Share insights about design systems, prototyping, and design ops
+        - Comment on design-related news and product launches
         
-        IMPORTANT: Only respond to genuine questions or conversation starters. 
-        If the message seems like just an acknowledgment or very short response, politely engage but keep it brief.
+        🚀 **Technology & Products:**
+        - Explain new frameworks, tools, and technologies
+        - Discuss AI/ML developments (especially relevant to Groq!)
+        - Analyze product strategies and market trends
+        - Share startup and business insights
+        
+        💬 **Conversation Style:**
+        - Be conversational, insightful, and engaging
+        - Use relevant emojis naturally (but don't overdo it)
+        - Reference specific articles from their recent digest when relevant
+        - Ask follow-up questions to keep the conversation going
+        - Share personal insights and opinions, not just facts
+        - Keep responses concise but substantial (2-5 sentences)
+        
+        🔧 **Commands:**
+        - If they want a new digest: suggest `/digest`
+        - If they want to update preferences: mention `/preferences`
+        - If they ask about features: explain what you can do
+        
+        IMPORTANT: 
+        - Be natural and conversational, not robotic
+        - Show genuine interest in their work and questions
+        - Tailor your response to their role (especially design focus)
+        - If they mention Groq, you can be enthusiastic since that's their company!
+        - Don't always end with questions - sometimes just share insights
         """
         
         response = groq_client.chat.completions.create(
             model="llama3-8b-8192",
             messages=[
-                {"role": "system", "content": "You are PulseBot, a knowledgeable news and industry assistant who provides insightful, helpful responses."},
+                {"role": "system", "content": "You are PulseBot, a knowledgeable and conversational AI assistant who specializes in design, technology, and industry insights. You have a warm, collegial personality and deep expertise in UX/UI design, product development, and tech trends."},
                 {"role": "user", "content": conversation_prompt}
             ],
-            temperature=0.7,
-            max_tokens=400
+            temperature=0.8,  # Higher temperature for more creative/conversational responses
+            max_tokens=600
         )
         
         bot_response = response.choices[0].message.content.strip()
@@ -554,20 +958,74 @@ def handle_conversation(user_id, user_message, channel_id):
         # Fallback response
         slack_client.chat_postMessage(
             channel=channel_id,
-            text="I'm here to help with news and industry insights! Ask me about trends in your field, or use `/digest` for your personalized news. 💡"
+            text="I'm here to chat about design, tech trends, and industry insights! What's on your mind? 💭"
         )
         return False
 
+        # Also update your message handling logic to be more conversational:
+
+        # In your handle_slack_events function, replace the message handling section with this:
+
+        # Handle app mentions and direct messages
+        if data.get('type') == 'event_callback':
+            event = data.get('event', {})
+            
+            if event.get('type') == 'message' and 'subtype' not in event:
+                user_id = event.get('user')
+                text = event.get('text', '')
+                channel = event.get('channel')
+                
+                # Skip bot messages
+                if user_id == data.get('authorizations', [{}])[0].get('user_id'):
+                    return jsonify({'status': 'ok'})
+                
+                # Check if user is in onboarding
+                if user_id in user_onboarding_state:
+                    def process_async_profile():
+                        process_user_profile_input(user_id, text, channel)
+                    
+                    thread = threading.Thread(target=process_async_profile)
+                    thread.start()
+                    
+                elif user_id in user_profiles:
+                    # Make it MUCH more conversational - respond to almost everything
+                    # Filter out very short acknowledgments
+                    should_respond = (
+                        len(text.strip()) > 2 and  # More than just "ok", "hi", etc.
+                        text.strip().lower() not in ['thanks', 'thank you', 'ok', 'okay', 'cool', 'nice', 'good', 'great', 'awesome'] and
+                        not text.strip().startswith('!')  # Skip commands that aren't ours
+                    )
+                    
+                    if should_respond:
+                        def handle_async_conversation():
+                            handle_conversation(user_id, text, channel)
+                        
+                        thread = threading.Thread(target=handle_async_conversation)
+                        thread.start()
+                else:
+                    # New user - start onboarding
+                    def send_async_onboarding():
+                        send_onboarding_message(user_id, channel)
+                    
+                    thread = threading.Thread(target=send_async_onboarding)
+                    thread.start()
+
+        # Add some fun conversation starters:
+
 def format_slack_message(digest, articles, user_profile):
-    """Format the digest for Slack with proper formatting and links"""
+    """Format the digest for Slack with proper length limits"""
     role = user_profile.get("primary_role", "professional")
+    
+    # Ensure digest isn't too long
+    if len(digest) > 2500:
+        digest = digest[:2400] + "..."
     
     message_blocks = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": f"🌅 Your Personalized Digest - {datetime.now().strftime('%B %d, %Y')}"
+                "text": f"🌅 Your Daily Digest - {datetime.now().strftime('%B %d')}"
             }
         },
         {
@@ -575,7 +1033,7 @@ def format_slack_message(digest, articles, user_profile):
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": f"Curated for: {role.title()} | {len(articles)} articles analyzed"
+                    "text": f"Curated for: {role.title()} | {len(articles)} articles"
                 }
             ]
         },
@@ -588,18 +1046,11 @@ def format_slack_message(digest, articles, user_profile):
         },
         {
             "type": "divider"
-        },
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*📚 Read the Full Articles:*"
-            }
         }
     ]
     
-    # Add article links with categories
-    for i, article in enumerate(articles[:6]):
+    # Add top 5 article links only
+    for i, article in enumerate(articles[:5]):
         category_emoji = {
             "engineering": "⚙️",
             "design": "🎨", 
@@ -609,11 +1060,16 @@ def format_slack_message(digest, articles, user_profile):
             "crypto": "₿"
         }.get(article.get("category", "general"), "📰")
         
+        # Truncate title if too long
+        title = article['title']
+        if len(title) > 60:
+            title = title[:57] + "..."
+        
         message_blocks.append({
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"{category_emoji} <{article['link']}|{article['title']}>"
+                "text": f"{category_emoji} <{article['link']}|{title}>"
             }
         })
     
@@ -623,15 +1079,84 @@ def format_slack_message(digest, articles, user_profile):
         "elements": [
             {
                 "type": "mrkdwn",
-                "text": "💬 Ask me about any of these articles! | 🔄 Use `/digest` for a fresh digest | ⚙️ Use `/preferences` to update your profile"
+                "text": "💬 Ask me about any articles or just chat! | 🔄 `/digest` | ⚙️ `/preferences`"
             }
         ]
     })
     
     return message_blocks
 
+
+
+def get_conversation_starters(user_profile):
+    """Generate conversation starters based on user profile"""
+    role = user_profile.get('primary_role', 'professional')
+    
+    starters = {
+        'design': [
+            "What design trends are you excited about this year? 🎨",
+            "Have you tried any new design tools lately?",
+            "What's the biggest UX challenge you're working on?",
+            "Any interesting design patterns you've discovered recently?",
+            "How's the design system work going at Groq?"
+        ],
+        'engineering': [
+            "What's your favorite framework to work with right now?",
+            "Any interesting technical challenges you're solving?",
+            "Have you experimented with any new dev tools?",
+            "What's your take on the latest AI development tools?"
+        ],
+        'business': [
+            "What market trends are you keeping an eye on?",
+            "Any interesting startup stories caught your attention?",
+            "How's the business side of tech evolving?"
+        ]
+    }
+    
+    return starters.get(role, starters['design'])
+
+def send_simple_digest(digest, articles, user_profile, channel_id):
+    """Send a simple text-only digest if blocks fail"""
+    try:
+        role = user_profile.get("primary_role", "professional")
+        
+        # Create simple text message
+        message = f"🌅 *Your Daily Digest - {datetime.now().strftime('%B %d')}*\n"
+        message += f"_Curated for: {role.title()}_\n\n"
+        message += digest + "\n\n"
+        message += "*📚 Top Articles:*\n"
+        
+        for i, article in enumerate(articles[:5]):
+            category_emoji = {
+                "engineering": "⚙️",
+                "design": "🎨", 
+                "product": "📱",
+                "business": "💼",
+                "ai_ml": "🤖",
+                "crypto": "₿"
+            }.get(article.get("category", "general"), "📰")
+            
+            title = article['title']
+            if len(title) > 60:
+                title = title[:57] + "..."
+            
+            message += f"{category_emoji} <{article['link']}|{title}>\n"
+        
+        message += "\n💬 Ask me about any articles or just chat!"
+        
+        response = slack_client.chat_postMessage(
+            channel=channel_id,
+            text=message
+        )
+        return True
+        
+    except Exception as e:
+        print(f"Error sending simple digest: {e}")
+        return False
+
+
 def send_digest_to_user(user_id, channel_id=None):
-    """Send personalized digest to a user"""
+    """Send personalized digest to a user with error handling"""
     try:
         # Check if user has a profile
         if user_id not in user_profiles:
@@ -650,30 +1175,26 @@ def send_digest_to_user(user_id, channel_id=None):
         # Generate AI digest
         digest = personalized_summarize_with_groq(articles, user_profile)
         if not digest:
-            digest = "Here are today's top stories curated for you:"
+            digest = f"Here are today's top stories curated for your role as a {user_profile.get('primary_role', 'professional')}:"
         
-        # Format for Slack
-        message_blocks = format_slack_message(digest, articles, user_profile)
-        
-        # Send message
-        if channel_id:
+        # Try to send with blocks first
+        try:
+            message_blocks = format_slack_message(digest, articles, user_profile)
+            
+            target_channel = channel_id if channel_id else user_id
             response = slack_client.chat_postMessage(
-                channel=channel_id,
+                channel=target_channel,
                 blocks=message_blocks,
                 text=f"Daily personalized digest"
             )
-        else:
-            response = slack_client.chat_postMessage(
-                channel=user_id,
-                blocks=message_blocks,
-                text=f"Daily personalized digest"
-            )
+            return True
+            
+        except SlackApiError as e:
+            print(f"Blocks failed: {e}. Trying simple text...")
+            # Fallback to simple text message   
+            target_channel = channel_id if channel_id else user_id
+            return send_simple_digest(digest, articles, user_profile, target_channel)
         
-        return True
-        
-    except SlackApiError as e:
-        print(f"Slack API error: {e}")
-        return False
     except Exception as e:
         print(f"Error sending digest: {e}")
         return False
@@ -1137,6 +1658,34 @@ def debug():
 @app.route('/health')
 def health():
     return "PulseBot is running!"
+
+@app.route('/debug-news/<user_id>')
+def debug_news_for_user(user_id):
+    """Debug endpoint to test news fetching for a specific user"""
+    if user_id not in user_profiles:
+        return jsonify({"error": "User not found"})
+    
+    user_profile = user_profiles[user_id]
+    
+    # Run debug
+    debug_news_fetching(user_profile)
+    
+    # Fetch articles
+    articles = fetch_personalized_news(user_profile, limit=10)
+    
+    return jsonify({
+        "user_profile": user_profile,
+        "articles_found": len(articles),
+        "articles": [
+            {
+                "title": article["title"],
+                "category": article["category"],
+                "source": article["source"],
+                "relevance_score": calculate_article_relevance_score(article, user_profile)
+            }
+            for article in articles
+        ]
+    })
 
 if __name__ == '__main__':
     scheduler.start()
