@@ -4,3 +4,5 @@ groq>=0.11.0
 feedparser==6.0.10
 apscheduler==3.10.4
 requests==2.31.0
+beautifulsoup4==4.13.4
+python-dotenv==1.0.0
